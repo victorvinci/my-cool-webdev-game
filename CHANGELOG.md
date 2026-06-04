@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Changed** the frontend page `<title>` to `my-cool-webdev-game` (`apps/frontend/index.html`).
 - **Changed** `nxCloudId` in `nx.json` to empty — it still pointed at the template's Nx Cloud workspace, so local `nx` runs phoned home to a workspace we don't own. Local runs now use the filesystem cache; CI already disables Nx Cloud via the `NX_CLOUD_ENABLED` kill switch.
+- **Changed** the frontend e2e suite (`apps/frontend-e2e/src/example.spec.ts`) for the new games-hub home page: the home assertion now expects the `my-cool-webdev-game` heading and a Tic-Tac-Toe link, and a new test navigates to `/tic-tac-toe` and plays a move.
 
 ### Fixed
 
