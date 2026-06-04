@@ -10,18 +10,18 @@
  * where prototype patching propagated to existing instances).
  *
  * `libs/types` constructs its schemas at module-evaluation time. If
- * `registry.ts` imports `@mcb/types` before this extension runs, the
+ * `registry.ts` imports `@game/types` before this extension runs, the
  * resulting `UserSchema.openapi(…)` call throws "openapi is not a
  * function". By splitting the extension into its own side-effect module
  * and importing it FIRST in `registry.ts`, we guarantee ES-module
  * evaluation order: this file evaluates → extension applies → THEN
- * `@mcb/types` evaluates → schemas pick up the patched prototype.
+ * `@game/types` evaluates → schemas pick up the patched prototype.
  *
  * Keep this import at the very top of `registry.ts`. Putting it after a
- * `@mcb/types` import would defeat the purpose.
+ * `@game/types` import would defeat the purpose.
  *
  * `libs/types` does NOT take a `zod-to-openapi` dependency — keeping the
- * extension here means the React frontend (which also imports `@mcb/types`)
+ * extension here means the React frontend (which also imports `@game/types`)
  * doesn't have to bundle the OpenAPI converter.
  */
 

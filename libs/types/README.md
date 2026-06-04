@@ -1,6 +1,6 @@
-# @mcb/types
+# @game/types
 
-Shared TypeScript types and Zod schemas for the monorepo. Imported from both `apps/frontend` and `apps/backend` as `@mcb/types`.
+Shared TypeScript types and Zod schemas for the monorepo. Imported from both `apps/frontend` and `apps/backend` as `@game/types`.
 
 ## Why this lib exists
 
@@ -26,7 +26,7 @@ Because runtime validation and compile-time types come from the same definition,
 1. Create or edit a file under `src/lib/`.
 2. Export a Zod schema and its inferred type.
 3. Re-export from `src/index.ts`.
-4. Import from either app as `import { YourType } from '@mcb/types'`.
+4. Import from either app as `import { YourType } from '@game/types'`.
 
 ## Running tests
 

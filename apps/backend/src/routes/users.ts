@@ -4,7 +4,7 @@ import {
     type ApiSuccess,
     type ListUsersQuery,
     type ListUsersResponse,
-} from '@mcb/types';
+} from '@game/types';
 import { validate } from '../middleware/validate';
 import { listUsers } from '../services/users.service';
 

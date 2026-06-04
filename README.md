@@ -102,7 +102,7 @@ The boundary is: **patterns and infrastructure that every web app needs** (typed
 ## Project Structure
 
 ```text
-steamdeck-webdev-template/
+my-cool-webdev-game/
 ├── apps/
 │   ├── frontend/               # React + Vite + TanStack Router
 │   │   ├── src/
@@ -125,8 +125,8 @@ steamdeck-webdev-template/
 │   │       └── main.ts         # Entry (helmet, CORS, rate-limit, graceful shutdown)
 │   └── backend-e2e/            # Backend integration tests (Jest)
 ├── libs/
-│   ├── types/                  # @mcb/types — shared Zod schemas + inferred TS types
-│   └── utils/                  # @mcb/utils — small dependency-free helpers
+│   ├── types/                  # @game/types — shared Zod schemas + inferred TS types
+│   └── utils/                  # @game/utils — small dependency-free helpers
 ├── db/
 │   ├── migrations/             # Numbered SQL migration files (001_initial.sql, …)
 │   ├── schema.sql              # Bootstrap script — aggregates migrations for first init
@@ -156,7 +156,7 @@ steamdeck-webdev-template/
 │                               #   release pipeline (release.yml), PR-size labeler (pr-size.yml)
 ├── docker-compose.yml          # Local MySQL service
 ├── nx.json                     # Nx workspace config (plugins, namedInputs, targetDefaults)
-├── tsconfig.base.json          # Root TypeScript config (path aliases: @mcb/types, @mcb/utils)
+├── tsconfig.base.json          # Root TypeScript config (path aliases: @game/types, @game/utils)
 ├── eslint.config.mjs           # ESLint flat config (module boundary enforcement)
 ├── renovate.json               # Renovate dependency automation (grouped by ecosystem)
 ├── lighthouserc.json           # Lighthouse CI assertions (weekly scheduled run)
@@ -187,8 +187,8 @@ The fastest path is **GitHub Codespaces** or a local **VS Code Dev Container**: 
 If you'd rather work directly on the host:
 
 ```bash
-git clone git@github.com:victorvinci/steamdeck-webdev-template.git
-cd steamdeck-webdev-template
+git clone git@github.com:victorvinci/my-cool-webdev-game.git
+cd my-cool-webdev-game
 
 # 1. Install JS dependencies
 npm install
@@ -347,7 +347,7 @@ npm run e2e:be       # backend e2e only (Jest)
 
 ## API Surface
 
-The demo backend exposes three routes. Schemas live in `libs/types/src/lib/api.ts` and are the single source of truth — both apps import from `@mcb/types`, so the contract can never drift between server and client.
+The demo backend exposes three routes. Schemas live in `libs/types/src/lib/api.ts` and are the single source of truth — both apps import from `@game/types`, so the contract can never drift between server and client.
 
 ### OpenAPI / Swagger UI
 
@@ -376,7 +376,7 @@ type ApiError = {
 };
 ```
 
-`ApiResponse<T> = ApiSuccess<T> | ApiError`. Use the `isApiError` type guard from `@mcb/types` to branch.
+`ApiResponse<T> = ApiSuccess<T> | ApiError`. Use the `isApiError` type guard from `@game/types` to branch.
 
 ### Routes
 

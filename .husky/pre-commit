@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# Husky pre-commit hook for steamdeck-webdev-template.
+# Husky pre-commit hook for my-cool-webdev-game.
 #
 # Two stages, both fail-fast on error:
 #

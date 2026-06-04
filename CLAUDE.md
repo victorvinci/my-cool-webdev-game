@@ -1,4 +1,4 @@
-# steamdeck-webdev-template
+# my-cool-webdev-game
 
 Nx monorepo: React + Vite + TanStack Router frontend, Express backend, shared `types` and `utils` libs.
 

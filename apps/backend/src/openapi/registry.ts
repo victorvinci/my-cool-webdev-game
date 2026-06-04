@@ -35,7 +35,7 @@
 import './zod-extension';
 import { OpenApiGeneratorV3, OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
-import { ListUsersQuerySchema, ListUsersResponseSchema, UserSchema } from '@mcb/types';
+import { ListUsersQuerySchema, ListUsersResponseSchema, UserSchema } from '@game/types';
 
 export const registry = new OpenAPIRegistry();
 
@@ -231,10 +231,10 @@ export function generateOpenApiDocument() {
     return generator.generateDocument({
         openapi: '3.0.3',
         info: {
-            title: 'steamdeck-webdev-template API',
+            title: 'my-cool-webdev-game API',
             version: API_VERSION,
             description:
-                'Public HTTP API for the steamdeck-webdev-template demo backend. Generated from the Zod schemas in `libs/types` — see `apps/backend/src/openapi/registry.ts`.',
+                'Public HTTP API for the my-cool-webdev-game demo backend. Generated from the Zod schemas in `libs/types` — see `apps/backend/src/openapi/registry.ts`.',
         },
         servers: [{ url: 'http://localhost:3000', description: 'Local dev' }],
         tags: [

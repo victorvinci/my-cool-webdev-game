@@ -1,4 +1,4 @@
-# Gitleaks config — secrets-scanning rules for steamdeck-webdev-template.
+# Gitleaks config — secrets-scanning rules for my-cool-webdev-game.
 #
 # Used by:
 #   - The `gitleaks-detect` CI job (.github/workflows/ci.yml) on every PR.

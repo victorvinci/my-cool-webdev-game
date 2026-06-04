@@ -21,8 +21,8 @@
         "noUnusedParameters": true,
         "noUncheckedIndexedAccess": true,
         "paths": {
-            "@mcb/types": ["./libs/types/src/index.ts"],
-            "@mcb/utils": ["./libs/utils/src/index.ts"]
+            "@game/types": ["./libs/types/src/index.ts"],
+            "@game/utils": ["./libs/utils/src/index.ts"]
         }
     },
     "exclude": ["node_modules", "tmp"]

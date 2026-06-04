@@ -1,6 +1,6 @@
-# @mcb/utils
+# @game/utils
 
-Small, dependency-free helper functions shared between `apps/frontend` and `apps/backend`. Imported as `@mcb/utils`.
+Small, dependency-free helper functions shared between `apps/frontend` and `apps/backend`. Imported as `@game/utils`.
 
 ## What's exported
 
@@ -11,7 +11,7 @@ Small, dependency-free helper functions shared between `apps/frontend` and `apps
 
 - Anything with framework dependencies (React, Express, etc.) — keep those in the relevant app or feature-specific lib.
 - Anything that loads environment variables — config lives in the app that needs it, not a shared lib.
-- Anything specific to the API domain — those belong in `@mcb/types`.
+- Anything specific to the API domain — those belong in `@game/types`.
 
 If a helper you're adding pulls in a dep or leaks an app-specific concern, it's a sign that it should live closer to the code that uses it.
 

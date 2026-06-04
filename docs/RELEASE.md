@@ -1,6 +1,6 @@
 # Release workflow
 
-How we cut a version of `steamdeck-webdev-template`. The workflow encodes the branch model enforced by the `develop` and `main` rulesets plus the `release-tags` ruleset, and is designed to work alongside the two-commit AI-attribution flow documented in `CLAUDE.md`.
+How we cut a version of `my-cool-webdev-game`. The workflow encodes the branch model enforced by the `develop` and `main` rulesets plus the `release-tags` ruleset, and is designed to work alongside the two-commit AI-attribution flow documented in `CLAUDE.md`.
 
 ## Branch model
 

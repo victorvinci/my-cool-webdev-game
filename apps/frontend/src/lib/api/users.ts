@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { ListUsersResponseSchema, type ListUsersResponse, type ApiSuccess } from '@mcb/types';
+import { ListUsersResponseSchema, type ListUsersResponse, type ApiSuccess } from '@game/types';
 import { api } from '../api';
 
 /**

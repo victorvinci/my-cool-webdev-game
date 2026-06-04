@@ -1,5 +1,5 @@
 import { render, screen, within } from '@testing-library/react';
-import type { User } from '@mcb/types';
+import type { User } from '@game/types';
 import { UsersList } from './UsersList';
 
 const user = (id: number, name: string, email: string): User => ({

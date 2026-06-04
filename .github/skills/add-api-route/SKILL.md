@@ -45,7 +45,7 @@ Read these first — copy their structure:
    refresh `apps/backend/openapi.json`. The `openapi-drift` CI job fails if you
    edit a schema and forget this — always regen and commit the snapshot.
 5. **Frontend hook + component.** Add a TanStack Query hook in
-   `apps/frontend/src/lib/`, import the shared types from `@mcb/types` (do not
+   `apps/frontend/src/lib/`, import the shared types from `@game/types` (do not
    re-declare them), and a component in `apps/frontend/src/components/`.
 6. **Storybook story (MANDATORY).** Every new frontend component ships a
    co-located `*.stories.tsx` covering at least the default state plus meaningful

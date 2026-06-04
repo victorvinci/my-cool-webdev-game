@@ -118,8 +118,8 @@
         }
     },
     "info": {
-        "description": "Public HTTP API for the steamdeck-webdev-template demo backend. Generated from the Zod schemas in `libs/types` — see `apps/backend/src/openapi/registry.ts`.",
-        "title": "steamdeck-webdev-template API",
+        "description": "Public HTTP API for the my-cool-webdev-game demo backend. Generated from the Zod schemas in `libs/types` — see `apps/backend/src/openapi/registry.ts`.",
+        "title": "my-cool-webdev-game API",
         "version": "0.3.0"
     },
     "openapi": "3.0.3",

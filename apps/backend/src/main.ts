@@ -2,11 +2,11 @@
 // Zod's prototype before any schema is constructed elsewhere. Zod 4 schemas
 // lock their prototype chain at construction time — schemas built before
 // `extendZodWithOpenApi(z)` runs do NOT pick up the method retroactively
-// (a behaviour change vs. Zod 3). `usersRouter` below imports `@mcb/types`,
+// (a behaviour change vs. Zod 3). `usersRouter` below imports `@game/types`,
 // which evaluates the schema definitions, so the extension has to run first.
 // Putting the side-effect import inside `openapi/registry.ts` is enough for
 // `scripts/gen-openapi.ts` (which imports only registry.ts) but NOT for the
-// runtime backend, because there `@mcb/types` is already loaded via
+// runtime backend, because there `@game/types` is already loaded via
 // `routes/users.ts` long before `openapi/serve.ts` is reached.
 import './openapi/zod-extension';
 

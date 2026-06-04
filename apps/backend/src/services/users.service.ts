@@ -1,6 +1,6 @@
 import type { RowDataPacket } from 'mysql2';
 import { db } from '../config/db';
-import type { ListUsersQuery, ListUsersResponse, User } from '@mcb/types';
+import type { ListUsersQuery, ListUsersResponse, User } from '@game/types';
 
 /**
  * Thin data-access layer for the `users` table. Handlers stay dumb; all SQL

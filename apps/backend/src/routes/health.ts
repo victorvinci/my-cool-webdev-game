@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '../config/db';
-import type { ApiSuccess } from '@mcb/types';
+import type { ApiSuccess } from '@game/types';
 
 const router = Router();
 

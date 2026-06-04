@@ -5,7 +5,7 @@ describe('generateOpenApiDocument', () => {
 
     it('emits an OpenAPI 3.0.x document', () => {
         expect(doc.openapi).toMatch(/^3\.0\./);
-        expect(doc.info.title).toBe('steamdeck-webdev-template API');
+        expect(doc.info.title).toBe('my-cool-webdev-game API');
         // version comes from package.json — assert it parses, not its exact value
         expect(doc.info.version).toMatch(/^\d+\.\d+\.\d+/);
     });

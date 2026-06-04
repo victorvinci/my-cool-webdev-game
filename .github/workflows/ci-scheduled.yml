@@ -1,4 +1,4 @@
-# Scheduled CI jobs for steamdeck-webdev-template.
+# Scheduled CI jobs for my-cool-webdev-game.
 #
 # Lives separately from ci.yml so the push/PR pipeline stays focused on
 # gating jobs. All jobs here run on a weekly cron and are also exposed via
@@ -830,7 +830,7 @@ jobs:
                           ``,
                           `**Likely causes (in order of frequency):**`,
                           ``,
-                          `1. A new file landed that contains \`steamdeck-webdev-template\`, \`@mcb/\`, \`victorvinci\`, or \`victorvinci@protonmail.com\` but isn't in the script's allowlist. The job logs name the file(s); add to the appropriate sed pass.`,
+                          `1. A new file landed that contains \`my-cool-webdev-game\`, \`@game/\`, \`victorvinci\`, or \`victorvinci@protonmail.com\` but isn't in the script's allowlist. The job logs name the file(s); add to the appropriate sed pass.`,
                           `2. The script itself has a regression (broken sed expression, missing argument). Run locally with \`./scripts/rename-template.sh ...\` to reproduce.`,
                           `3. \`npm run check\` no longer passes on a renamed tree because of an unrelated change. Reproduce with \`./scripts/rename-template.sh\` then look at the failing gate.`,
                           ``,

@@ -1,4 +1,4 @@
-import type { User } from '@mcb/types';
+import type { User } from '@game/types';
 
 export type UsersListProps = {
     users: User[];

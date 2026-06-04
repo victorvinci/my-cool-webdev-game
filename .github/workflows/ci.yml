@@ -1,4 +1,4 @@
-# GitHub Actions CI for steamdeck-webdev-template
+# GitHub Actions CI for my-cool-webdev-game
 #
 # Required repo secrets (Settings → Secrets and variables → Actions):
 #   NX_CLOUD_ACCESS_TOKEN  — enables Nx Cloud remote cache + Self-Healing CI.

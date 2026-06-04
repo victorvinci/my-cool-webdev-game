@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { formatError } from '@mcb/utils';
+import { formatError } from '@game/utils';
 import { UsersList } from '../components/UsersList';
 import { useUsersQuery } from '../lib/api/users';
 
