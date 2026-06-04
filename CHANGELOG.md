@@ -15,10 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Changed** the frontend page `<title>` to `my-cool-webdev-game` (`apps/frontend/index.html`).
+- **Changed** `nxCloudId` in `nx.json` to empty — it still pointed at the template's Nx Cloud workspace, so local `nx` runs phoned home to a workspace we don't own. Local runs now use the filesystem cache; CI already disables Nx Cloud via the `NX_CLOUD_ENABLED` kill switch.
 
 ### Fixed
 
 - **Fixed** a blank page when no `.env` is present: `apps/frontend/src/lib/env.ts` hard-threw on a missing `VITE_API_URL`, and because the router loads every route (the `users` route imports the API client → `env.ts`), that crashed the whole app — including games that never call the backend. `VITE_API_URL` now defaults to `http://localhost:3000` instead of being required, so a client-side game renders without any backend setup; set it in a `.env` to override when running the backend.
+- **Fixed** the `playwright-e2e image (ghcr)` CI job failing with `permission_denied: write_package`. The image name in `.github/workflows/ci.yml` was `ghcr.io/<owner>/playwright-e2e`, which collides when a fork lives under the **same owner** as the template (the template already owns that package). The name is now repo-scoped to `ghcr.io/<owner>/<repo>/playwright-e2e`, so each fork owns its own package and no manual access grant is needed.
 
 ## [1.0.0] - 2026-06-03
 
