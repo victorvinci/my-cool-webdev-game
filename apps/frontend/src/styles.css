@@ -1,1 +1,61 @@
 /* You can add global styles to this file, and also import other style files */
+
+/* ── Tic-Tac-Toe ───────────────────────────────────────────────────────── */
+.ttt-game {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+}
+
+.ttt-status {
+    margin: 0;
+    min-height: 1.5rem;
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+.ttt-board {
+    display: grid;
+    grid-template-columns: repeat(3, 5rem);
+    grid-template-rows: repeat(3, 5rem);
+    gap: 0.5rem;
+}
+
+.ttt-cell {
+    font-size: 2.5rem;
+    font-weight: 700;
+    line-height: 1;
+    color: #111827;
+    background: #f3f4f6;
+    border: 2px solid #d1d5db;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    transition: background-color 120ms ease;
+}
+
+.ttt-cell:hover:not(:disabled) {
+    background: #e5e7eb;
+}
+
+.ttt-cell:disabled {
+    cursor: default;
+}
+
+.ttt-cell--winning {
+    background: #bbf7d0;
+    border-color: #22c55e;
+}
+
+.ttt-reset {
+    padding: 0.5rem 1rem;
+    font-size: 1rem;
+    cursor: pointer;
+    background: #fff;
+    border: 1px solid #d1d5db;
+    border-radius: 0.5rem;
+}
+
+.ttt-reset:hover {
+    background: #f3f4f6;
+}

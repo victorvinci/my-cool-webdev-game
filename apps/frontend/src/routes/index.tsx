@@ -3,23 +3,18 @@ import { createFileRoute, Link } from '@tanstack/react-router';
 function Home() {
     return (
         <main>
-            <h1>Steamdeck Webdev Template</h1>
-            <p>
-                A full-stack Nx monorepo boilerplate with React, Express, and MySQL — ready to fork
-                for new projects.
-            </p>
+            <h1>my-cool-webdev-game</h1>
+            <p>A playground for building simple browser games.</p>
 
-            <h2>What's included</h2>
+            <h2>Games</h2>
             <ul>
-                <li>React + Vite + TanStack Router frontend</li>
-                <li>Express 5 API backend</li>
-                <li>Shared TypeScript types &amp; Zod schemas</li>
-                <li>Storybook component library</li>
-                <li>Full CI/CD pipeline with GitHub Actions</li>
+                <li>
+                    <Link to="/tic-tac-toe">Tic-Tac-Toe</Link> — two-player, hot-seat.
+                </li>
             </ul>
 
             <p>
-                <Link to="/users">View users →</Link> (requires the backend to be running)
+                More to come — see <code>IDEAS.md</code> for the backlog.
             </p>
         </main>
     );
