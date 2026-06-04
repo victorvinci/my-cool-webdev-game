@@ -1,0 +1,69 @@
+# CodeQL static analysis — GitHub's SAST, replacing the GitLab
+# Security/SAST.gitlab-ci.yml template that shipped with the boilerplate.
+#
+# Dependency scanning is handled separately via GitHub-native Dependabot
+# Alerts (enabled in repo settings, no workflow file needed).
+# Secret scanning is handled separately via GitHub-native Secret Scanning
+# (enabled in repo settings, no workflow file needed).
+
+name: CodeQL
+
+on:
+    pull_request:
+        branches: [main, develop]
+        # No `paths-ignore` here, on purpose. CodeQL is a *required* check
+        # via the `code_scanning` rule on the develop/main rulesets, and
+        # that rule waits for CodeQL **results** before a merge is allowed.
+        # A path filter that skips the workflow on a docs-only PR means no
+        # results are ever uploaded, so the PR deadlocks forever on "Code
+        # scanning is waiting for results from CodeQL" — only an admin
+        # bypass can land it. `ci.yml` dropped its PR `paths-ignore` for
+        # exactly this reason (see its header). The price is CodeQL running
+        # on docs-only PRs too (~2-3 min); the deadlock is worse.
+    schedule:
+        - cron: '17 6 * * 1' # weekly, Monday early morning
+    # No push trigger. In a PR-based workflow CodeQL has already run on the PR
+    # before the squash-merge lands, so a second run on push-to-main would
+    # double-count minutes for the same code. The weekly cron still catches
+    # anything that sneaks in via direct push.
+    workflow_dispatch:
+
+# Default to read-only at the workflow level; the analyze job re-grants the
+# narrow writes it actually needs (security-events for SARIF upload). Without
+# this top-level declaration GitHub hands the token its default scopes, which
+# OpenSSF Scorecard's Token-Permissions check (rightly) flags.
+permissions:
+    contents: read
+
+# Cancel in-progress runs when new commits land on the same ref — two rapid
+# pushes to main otherwise queue two expensive CodeQL runs back-to-back.
+concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+
+env:
+    # Opt in to Node.js 24 for JavaScript actions ahead of the June 2026
+    # forced cutover. See ci.yml for the full rationale.
+    FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+    analyze:
+        name: Analyze (${{ matrix.language }})
+        runs-on: ubuntu-latest
+        permissions:
+            actions: read
+            contents: read
+            security-events: write
+        strategy:
+            fail-fast: false
+            matrix:
+                language: [javascript-typescript]
+        steps:
+            - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+            - uses: github/codeql-action/init@5c8a8a642e79153f5d047b10ec1cba1d1cc65699 # v3
+              with:
+                  languages: ${{ matrix.language }}
+                  queries: security-and-quality
+            - uses: github/codeql-action/analyze@5c8a8a642e79153f5d047b10ec1cba1d1cc65699 # v3
+              with:
+                  category: '/language:${{ matrix.language }}'

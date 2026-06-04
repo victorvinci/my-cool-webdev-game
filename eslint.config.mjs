@@ -1,0 +1,65 @@
+import nx from '@nx/eslint-plugin';
+
+export default [
+    ...nx.configs['flat/base'],
+    ...nx.configs['flat/typescript'],
+    ...nx.configs['flat/javascript'],
+    {
+        ignores: [
+            '**/dist',
+            '**/out-tsc',
+            '**/storybook-static',
+            '**/vite.config.*.timestamp*',
+            '**/vitest.config.*.timestamp*',
+            '**/routeTree.gen.ts',
+        ],
+    },
+    {
+        files: ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx'],
+        rules: {
+            '@nx/enforce-module-boundaries': [
+                'error',
+                {
+                    enforceBuildableLibDependency: true,
+                    allow: ['^.*/eslint(\\.base)?\\.config\\.[cm]?[jt]s$'],
+                    depConstraints: [
+                        {
+                            sourceTag: 'scope:frontend',
+                            onlyDependOnLibsWithTags: ['scope:frontend', 'scope:shared'],
+                        },
+                        {
+                            sourceTag: 'scope:backend',
+                            onlyDependOnLibsWithTags: ['scope:backend', 'scope:shared'],
+                        },
+                        {
+                            sourceTag: 'scope:shared',
+                            onlyDependOnLibsWithTags: ['scope:shared'],
+                        },
+                    ],
+                },
+            ],
+        },
+    },
+    {
+        files: [
+            '**/*.ts',
+            '**/*.tsx',
+            '**/*.cts',
+            '**/*.mts',
+            '**/*.js',
+            '**/*.jsx',
+            '**/*.cjs',
+            '**/*.mjs',
+        ],
+        rules: {
+            '@typescript-eslint/no-unused-vars': [
+                'warn',
+                {
+                    argsIgnorePattern: '^_',
+                    varsIgnorePattern: '^_',
+                    caughtErrorsIgnorePattern: '^_',
+                },
+            ],
+        },
+    },
+];

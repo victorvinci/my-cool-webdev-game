@@ -1,0 +1,65 @@
+# ============================================================================
+# SECURITY INVARIANT — DO NOT ADD STEPS THAT READ PR-CONTROLLED INPUT.
+# ----------------------------------------------------------------------------
+# This workflow runs with `pull_request_target`, which executes in the base
+# repo's context with its secrets (FORCE_DRAFT_PAT, GITHUB_TOKEN write scope).
+# That is ONLY safe because today the workflow:
+#   (a) never checks out PR head code (no `actions/checkout` with `ref:`),
+#   (b) only reads PR metadata that GitHub itself supplies (URL, draft bool,
+#       user type), NOT PR-authored strings (title, body, branch name, commit
+#       messages, file contents), and
+#   (c) only calls `gh pr ready --undo` with a trusted URL.
+# Any step that interpolates a PR-authored string into shell, JS, or an
+# action input turns this file into remote code execution against the base
+# repo, with FORCE_DRAFT_PAT exposed. If you need PR content here, either
+# switch the trigger to `pull_request` (loses write scope on forks, which
+# defeats the purpose of this workflow), or use `actions/github-script` to
+# fetch the data into a typed variable and handle it as untrusted.
+# See: https://securitylab.github.com/research/github-actions-preventing-pwn-requests/
+# ============================================================================
+#
+# Convert newly-opened PRs to draft so the CI gates in ci.yml (which skip
+# on draft) don't burn minutes until the author explicitly marks the PR
+# ready for review.
+#
+# Uses pull_request_target so the GITHUB_TOKEN has write scope on PRs from
+# forks as well as same-repo branches. This workflow only reads metadata
+# and calls `gh pr ready --undo` — it never checks out PR head code, so
+# running in the base-repo context is safe.
+name: Force Draft
+
+on:
+    pull_request_target:
+        types: [opened]
+
+permissions:
+    pull-requests: write
+
+env:
+    # Opt in to Node.js 24 for JavaScript actions ahead of the June 2026
+    # forced cutover. See ci.yml for the full rationale.
+    FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+    convert-to-draft:
+        name: Convert PR to Draft
+        runs-on: ubuntu-latest
+        timeout-minutes: 2
+        # Skip PRs that were already opened as draft (gh pr ready --undo
+        # would error) and PRs opened by bots (dependabot, renovate) — we
+        # want their automated PRs to run CI immediately.
+        if: >-
+            github.event.pull_request.draft == false &&
+            github.event.pull_request.user.type != 'Bot'
+        steps:
+            # GITHUB_TOKEN can't call the convertPullRequestToDraft GraphQL
+            # mutation even with `pull-requests: write` — it returns
+            # "Resource not accessible by integration." Use a fine-grained
+            # PAT (Pull requests: read/write on this repo) stored as
+            # FORCE_DRAFT_PAT. This workflow never checks out PR head
+            # code, so the PAT is not exposed to PR-authored scripts.
+            - name: Mark PR as draft
+              env:
+                  GH_TOKEN: ${{ secrets.FORCE_DRAFT_PAT }}
+                  PR_URL: ${{ github.event.pull_request.html_url }}
+              run: gh pr ready "$PR_URL" --undo

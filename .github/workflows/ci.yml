@@ -1,0 +1,839 @@
+# GitHub Actions CI for steamdeck-webdev-template
+#
+# Required repo secrets (Settings → Secrets and variables → Actions):
+#   NX_CLOUD_ACCESS_TOKEN  — enables Nx Cloud remote cache + Self-Healing CI.
+#                            Without it, nx-cloud calls no-op with a warning
+#                            (pipeline still runs, no caching).
+#
+# Notes on GitHub equivalents for the old GitLab pipeline:
+#   - CI_PIPELINE_SOURCE == merge_request_event → github.event_name == 'pull_request'
+#   - CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH   → github.ref == 'refs/heads/main'
+#   - CI_MERGE_REQUEST_DIFF_BASE_SHA            → github.event.pull_request.base.sha
+#   - CI_MERGE_REQUEST_TITLE                    → github.event.pull_request.title
+#   - Security/SAST template                    → .github/workflows/codeql.yml
+#   - Security/Secret-Detection template        → GitHub-native Secret Scanning (repo setting)
+#   - Security/Dependency-Scanning template     → Dependabot Alerts (repo setting) + Renovate
+#
+# Action pinning policy:
+#   Third-party (and first-party) actions are pinned to commit SHAs, not tags,
+#   so a compromised tag in any upstream action repo can't silently swap code
+#   into our pipeline. The `# vX.Y.Z` comment next to each pin is what Renovate
+#   reads to bump the SHA — see `renovate.json` (`helpers:pinGitHubActionDigests`).
+
+name: CI
+
+on:
+    push:
+        branches: [main, develop]
+        # Skip CI when only docs / metadata change. Files that affect builds
+        # (package.json, .nvmrc, tsconfig*, .github/**, apps/**, libs/**, etc.)
+        # are intentionally NOT in this list.
+        paths-ignore:
+            - '**.md'
+            - 'LICENSE'
+            - '.gitignore'
+            - '.editorconfig'
+            - '.vscode/**'
+            - 'docs/**'
+            # Standalone attribution-only pushes (the second commit of the
+            # two-commit flow when pushed on its own) shouldn't burn a CI
+            # run. Bundled pushes that touch real code alongside this file
+            # still trigger CI because paths-ignore only skips when EVERY
+            # changed path matches.
+            - '.ai-attribution.jsonl'
+    # No paths-ignore on PRs: when a PR touches only ignored paths, GitHub
+    # skips the workflow entirely and `ci-pass` never posts, which leaves
+    # branch protection stuck on "Waiting for status to be reported." The
+    # detect job's `code` output gates the heavy jobs instead — docs-only
+    # PRs pay only ~1 min (detect + ci-pass) while branch protection stays
+    # unblocked. The push-to-main/develop block above still uses
+    # paths-ignore because there's no branch-protection gate on pushes.
+    pull_request:
+        types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+
+# Scheduled jobs (npm audit, license scan, outdated deps, bundle-size budget,
+# stale branch sweep) live in .github/workflows/ci-scheduled.yml so this file
+# stays focused on push/PR gates.
+
+# Cancel in-progress runs for the same PR / branch when new commits land.
+concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+
+# Least-privilege default for GITHUB_TOKEN. Jobs override if they need more.
+permissions:
+    contents: read
+
+env:
+    HUSKY: '0'
+    NX_BRANCH: ${{ github.head_ref || github.ref_name }}
+    # Kill switch for Nx Cloud. When the `NX_CLOUD_ENABLED` repo variable
+    # is anything other than 'true' (e.g. we're out of free-plan credits),
+    # set NX_NO_CLOUD=true so nx skips cloud entirely regardless of the
+    # nxCloudId in nx.json. Blanking the token alone is not enough — nx
+    # still tries to auth using the workspace's nxCloudId. Flip the
+    # variable back to 'true' in repo Settings → Variables when credits
+    # reset.
+    NX_CLOUD_ACCESS_TOKEN: ${{ vars.NX_CLOUD_ENABLED == 'true' && secrets.NX_CLOUD_ACCESS_TOKEN || '' }}
+    NX_NO_CLOUD: ${{ vars.NX_CLOUD_ENABLED == 'true' && 'false' || 'true' }}
+    # Opt in to Node.js 24 for JavaScript actions ahead of the June 2026
+    # forced cutover. Silences the "Node.js 20 actions are deprecated"
+    # warning on every run. Remove once all pinned actions ship releases
+    # that default to Node 24 natively.
+    # https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+    FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+    # ---------- change detection ----------
+
+    # Detects whether code or frontend-relevant paths changed in this push/PR.
+    #
+    # `code`     — gates all heavy jobs (check, build, e2e, commitlint).
+    #              Docs-only PRs skip them and only pay for detect +
+    #              attribution-guard + ci-pass (~1 min), keeping branch
+    #              protection happy without burning free-tier minutes.
+    # `frontend` — additionally gates storybook-build on backend-only changes.
+    #
+    # Note: `attribution-guard` intentionally runs on every non-draft PR
+    # (not gated by `code`) — AI assistants can touch docs, workflows, or
+    # configs and still owe a JSONL entry per CLAUDE.md.
+    detect:
+        name: detect changed paths
+        runs-on: ubuntu-latest
+        timeout-minutes: 3
+        outputs:
+            code: ${{ steps.filter.outputs.code }}
+            frontend: ${{ steps.filter.outputs.frontend }}
+            renovate: ${{ steps.filter.outputs.renovate }}
+            migrations: ${{ steps.filter.outputs.migrations }}
+            markdown: ${{ steps.filter.outputs.markdown }}
+        steps:
+            - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+            - id: filter
+              uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3
+              with:
+                  filters: |
+                      code:
+                        - 'apps/**'
+                        - 'libs/**'
+                        - 'package.json'
+                        - 'package-lock.json'
+                        - 'nx.json'
+                        - 'tsconfig*.json'
+                        - '.nvmrc'
+                        - '.github/**'
+                      frontend:
+                        - 'apps/frontend/**'
+                        - 'apps/frontend-e2e/**'
+                        - 'libs/**'
+                        - 'apps/frontend/.storybook/**'
+                        - 'package.json'
+                        - 'package-lock.json'
+                        - 'nx.json'
+                        - 'tsconfig*.json'
+                        - '.nvmrc'
+                      renovate:
+                        - 'renovate.json'
+                      migrations:
+                        - 'db/migrations/**'
+                        - 'scripts/lint-migrations.sh'
+                      markdown:
+                        - '**/*.md'
+                        - '.markdownlint-cli2.jsonc'
+                      openapi:
+                        - 'libs/types/**'
+                        - 'apps/backend/src/openapi/**'
+                        - 'apps/backend/openapi.json'
+                        - 'scripts/gen-openapi.ts'
+
+    # ---------- quality ----------
+
+    check:
+        name: check & build
+        needs: detect
+        # Skip on draft PRs and docs-only PRs (no code paths changed).
+        # The `ready_for_review` trigger fires when the PR leaves draft,
+        # so the full gate still runs before merge.
+        #
+        # Quality gates (format, lint, typecheck, test) and build are
+        # merged into one job to avoid paying for a second checkout +
+        # npm ci on a fresh runner (~1-2 min saved per run on free tier).
+        if: >-
+            needs.detect.outputs.code == 'true' &&
+            (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+        steps:
+            - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+              with:
+                  fetch-depth: 0
+            - uses: ./.github/actions/setup-node-deps
+
+            - name: Start Nx Cloud CI run
+              if: vars.NX_CLOUD_ENABLED == 'true'
+              run: npx nx-cloud start-ci-run --no-distribution
+
+            - run: npm run format:check
+
+            - name: Resolve NX base
+              id: nx-base
+              uses: ./.github/actions/resolve-nx-base
+              with:
+                  pr-base: ${{ github.event.pull_request.base.sha }}
+                  push-before: ${{ github.event.before }}
+
+            - name: nx affected — lint / typecheck / test
+              run: npx nx affected -t lint typecheck test --parallel=3 --base="${{ steps.nx-base.outputs.base }}" --head=HEAD
+
+            - name: nx affected — build
+              run: npx nx affected -t build --parallel=3 --base="${{ steps.nx-base.outputs.base }}" --head=HEAD
+
+            - name: Self-Healing CI (on failure)
+              if: failure()
+              run: npx nx fix-ci
+
+            - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+              with:
+                  name: dist
+                  path: dist
+                  if-no-files-found: ignore
+                  retention-days: 7
+
+    # PR-time gzipped bundle-size diff vs. the PR base. Posts a sticky
+    # comment via preactjs/compressed-size-action — head builds, base
+    # builds, both totals + per-file diffs go in the comment, sorted by
+    # change size. ci-scheduled.yml has a weekly bundle-size job that
+    # tracks long-term trend against a stored baseline; this one is for
+    # the dev who shipped the regression today and needs feedback before
+    # merge, not 6 days later.
+    #
+    # Gated on `frontend` so backend-only and docs-only PRs skip it. Only
+    # runs on pull_request (the action requires both head and base SHAs).
+    # `strip-hash` collapses Vite's content-hash suffix (`index-BbeTQOkI.js`
+    # → `index-*.js`) so per-file rows match across builds and
+    # `collapse-unchanged: true` can hide them — without it every PR
+    # would show every chunk as added/removed.
+    bundle-size:
+        name: bundle size
+        needs: detect
+        if: >-
+            needs.detect.outputs.frontend == 'true' &&
+            github.event_name == 'pull_request' &&
+            github.event.pull_request.draft == false
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        permissions:
+            contents: read
+            pull-requests: write
+        steps:
+            - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+            # The compressed-size-action runs on Node 20 (its own runtime),
+            # but the `npm ci` it spawns inherits whichever Node is on PATH.
+            # Without this setup-node step it'd be Node 20 and `npm ci`
+            # would fail with EBADENGINE because `engines.node` in
+            # package.json pins >=24. Pulling node-version-file from .nvmrc
+            # keeps this in lock-step with the rest of CI.
+            - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+              with:
+                  node-version-file: .nvmrc
+                  cache: npm
+            # `continue-on-error: true` so a build failure on the BASE side
+            # doesn't fail the workflow. The case this guards: a PR that
+            # introduces the `build:fe` npm script itself (this very PR
+            # being one such case). The action runs `npm run build:fe` on
+            # both head and base SHAs; if base predates the script's
+            # introduction, base build fails and so does the action.
+            #
+            # Bundle-size is intentionally NOT in `ci-pass` needs (it's
+            # informational), so removing this guard wouldn't block merge —
+            # but a red-X on every PR until the script lands on the base
+            # branch is noisy. The `continue-on-error` keeps the step
+            # reportable while letting the workflow finish green; once
+            # `build:fe` exists on the base branch every subsequent PR
+            # produces a real diff.
+            - uses: preactjs/compressed-size-action@66325aad6443cb7cf89c4bfcd414aea2367cda94 # v2.9.1
+              continue-on-error: true
+              env:
+                  # Vite inlines VITE_* at build time. Without this, the
+                  # frontend Zod env check throws on first script eval and
+                  # the build fails. Value is irrelevant for size
+                  # measurement — it just has to satisfy z.string().url().
+                  # Mirrors the convention in ci-scheduled.yml's bundle job.
+                  VITE_API_URL: http://localhost:3000
+              with:
+                  install-script: 'npm ci'
+                  build-script: 'build:fe'
+                  pattern: 'dist/apps/frontend/**/*.{js,css}'
+                  # Vite default hash is 8 base64url chars; \w covers the
+                  # common case (alphanumeric + underscore). Hyphens in
+                  # hashes are rare in practice for 8-char digests.
+                  strip-hash: '-(\w{8,})\.(js|css)$'
+                  compression: 'gzip'
+
+    # Migration safety lint — guards db/migrations/ against destructive DDL
+    # patterns (DROP TABLE without IF EXISTS, DROP DATABASE, etc.) and
+    # filename / numbering hygiene. Gated on `migrations` so PRs that don't
+    # touch db/migrations/ skip the job entirely (~10s when it runs, $0 when
+    # it doesn't). Override syntax in the .sql files themselves —
+    # see scripts/lint-migrations.sh header for the rule list.
+    migrations-lint:
+        name: migration lint
+        needs: detect
+        if: >-
+            needs.detect.outputs.migrations == 'true' &&
+            (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+        runs-on: ubuntu-latest
+        timeout-minutes: 3
+        steps:
+            - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+            - run: bash scripts/lint-migrations.sh
+
+    # OpenAPI drift check — regenerates `apps/backend/openapi.json` from the
+    # Zod schemas in `libs/types` (via `apps/backend/src/openapi/registry.ts`)
+    # and fails if the working tree differs from the committed snapshot. The
+    # snapshot is committed so reviewers see API-shape changes inline in the
+    # PR diff; the gate catches the "edited a schema but forgot to regenerate"
+    # mistake. Gated on the `openapi` paths-filter (libs/types, the registry,
+    # the snapshot itself, the generator script) so PRs that don't touch any
+    # of those skip the job.
+    openapi-drift:
+        name: openapi drift
+        needs: detect
+        if: >-
+            needs.detect.outputs.openapi == 'true' &&
+            (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        steps:
+            - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+            - uses: ./.github/actions/setup-node-deps
+            - run: npm run gen:openapi:check
+
+    # Secret scanning via gitleaks. GitHub-native Secret Scanning (repo
+    # setting) catches known-vendor patterns; gitleaks complements it by
+    # detecting generic high-entropy strings via its `generic-api-key` rule
+    # plus ~150 vendor-specific token formats — and runs locally in the
+    # `.husky/pre-commit` hook so a leak never has to leave the dev machine.
+    #
+    # Implementation: download the gitleaks binary directly (checksum-pinned)
+    # rather than use `gitleaks/gitleaks-action`. Reasons:
+    #   - The action requires `GITLEAKS_LICENSE` for ANY repo owned by an
+    #     organisation, even free public ones. Forks owned by GitHub orgs
+    #     would hit a paywall on first PR with no useful escape hatch.
+    #   - The action wraps the binary anyway; running the binary directly
+    #     is one less moving part.
+    #   - Binary checksum-pinning is on par with action SHA-pinning for the
+    #     supply-chain story (Renovate's customManager regex bumps it).
+    #
+    # No paths-filter: secrets can leak in any file (docs, configs, code),
+    # so this runs on every non-draft PR. Cheap (~1s on this repo).
+    gitleaks-detect:
+        name: gitleaks
+        needs: detect
+        if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        env:
+            GITLEAKS_VERSION: '8.21.2'
+            GITLEAKS_SHA256: '5bc41815076e6ed6ef8fbecc9d9b75bcae31f39029ceb55da08086315316e3ba'
+        steps:
+            # Full history (`fetch-depth: 0`) so `gitleaks git` can walk every
+            # commit on the branch — the same scope a leak-review would do
+            # by hand. Without this, gitleaks only sees the shallow checkout
+            # (default 1 commit) and misses anything older than HEAD~1.
+            - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+              with:
+                  fetch-depth: 0
+            - name: Download gitleaks binary (checksum-pinned)
+              run: |
+                  set -euo pipefail
+                  TARBALL="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+                  URL="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${TARBALL}"
+                  curl -sSL --fail -o "$TARBALL" "$URL"
+                  echo "${GITLEAKS_SHA256}  ${TARBALL}" | sha256sum -c -
+                  tar -xzf "$TARBALL" gitleaks
+                  ./gitleaks version
+            - name: Scan repository
+              # `git` mode walks the commit history; `--redact` keeps secrets
+              # out of CI logs even when a finding fires; `--exit-code 1`
+              # makes the job fail on any non-allowlisted finding (hard gate).
+              # Config + allowlist live in `.gitleaks.toml`; per-finding
+              # mutes go in `.gitleaksignore` (fingerprint format).
+              run: ./gitleaks git --no-banner -v --redact --exit-code 1
+
+    # Markdown lint — markdownlint-cli2 over user-facing docs (README,
+    # CHANGELOG, docs/, root MD files). Config + ignores live in
+    # .markdownlint-cli2.jsonc; agent-tooling stubs (.claude / .opencode /
+    # .agents / .github skills + agents + prompts + PR templates) are
+    # excluded because they have non-standard structure (YAML frontmatter,
+    # no leading H1) that markdownlint's user-doc defaults flag spuriously.
+    # Gated on the `markdown` paths-filter so PRs without MD changes pay
+    # nothing. Runs needs.detect (no `check`) so it doesn't queue behind
+    # the heavy quality job — a typo in a doc is fast feedback.
+    markdown-lint:
+        name: markdown lint
+        needs: detect
+        if: >-
+            needs.detect.outputs.markdown == 'true' &&
+            (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+        runs-on: ubuntu-latest
+        timeout-minutes: 3
+        steps:
+            - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+            - uses: ./.github/actions/setup-node-deps
+            - run: npm run lint:md
+
+    commitlint:
+        name: commitlint (PR title)
+        needs: detect
+        if: >-
+            needs.detect.outputs.code == 'true' &&
+            github.event_name == 'pull_request' &&
+            github.event.pull_request.draft == false
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        steps:
+            - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+            - uses: ./.github/actions/setup-node-deps
+            - name: Lint PR title
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: |
+                  LATEST_TITLE=$(gh pr view ${{ github.event.pull_request.number }} --json title -q .title)
+                  CLEAN_TITLE=$(echo "$LATEST_TITLE" | sed 's/^\[WIP\] //g')
+                  echo "$CLEAN_TITLE" | npx commitlint --config commitlint.config.js
+
+    attribution-guard:
+        name: attribution guard
+        # Runs on every non-draft PR — AI commits can touch any path
+        # (docs, workflows, configs), not just apps/libs, and all of those
+        # require a JSONL entry per CLAUDE.md. The CHANGELOG check inside
+        # the script still only fires on apps/libs changes.
+        if: >-
+            github.event_name == 'pull_request' &&
+            github.event.pull_request.draft == false
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        steps:
+            # Shallow fetch keeps this job cheap on forks with long
+            # histories. We only need `$BASE_SHA..HEAD`, so 50 commits
+            # is enough for typical PRs. The deepen loop below handles
+            # larger PRs without reverting to a full clone.
+            - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+              with:
+                  fetch-depth: 50
+            - name: Ensure PR base ancestry is reachable
+              env:
+                  BASE_SHA: ${{ github.event.pull_request.base.sha }}
+              run: |
+                  set -euo pipefail
+                  # Try to fetch the base SHA directly; if the PR is
+                  # larger than 50 commits, deepen in steps until the
+                  # base is an ancestor of HEAD. Cap at 10 deepens to
+                  # avoid a runaway fetch on a pathological case.
+                  git fetch --no-tags --depth=50 origin "$BASE_SHA" || true
+                  tries=0
+                  until git merge-base --is-ancestor "$BASE_SHA" HEAD 2>/dev/null; do
+                      tries=$((tries + 1))
+                      if [ "$tries" -gt 10 ]; then
+                          echo "Could not reach base SHA after 10 deepens; falling back to full history." >&2
+                          git fetch --unshallow origin 2>/dev/null || git fetch --deepen=10000 origin
+                          break
+                      fi
+                      git fetch --deepen=50 origin
+                  done
+            - name: Enforce CHANGELOG + attribution log updates
+              env:
+                  BASE_SHA: ${{ github.event.pull_request.base.sha }}
+                  # AI assistant Co-Authored-By patterns. Matches commits
+                  # where an AI pair-programmer contributed code — NOT
+                  # automation bots like dependabot/renovate/github-actions
+                  # (those do dep/ops automation, not code authorship, and
+                  # don't need JSONL entries). Extend this list as new
+                  # assistants are adopted — use a name prefix that appears
+                  # in the trailer's identifier portion.
+                  AI_TRAILER_REGEX: 'Co-Authored-By:[[:space:]]+(claude-|Claude[[:space:]]*<noreply@anthropic|gpt-[0-9]|openai-|gemini-|(github-)?copilot([-[]|[[:space:]])|cursor([-[]|[[:space:]])|devin([-[]|[[:space:]])|codex-)'
+              run: |
+                  set -euo pipefail
+
+                  CHANGED=$(git diff --name-only "$BASE_SHA"...HEAD)
+                  echo "=== Changed files ==="
+                  echo "$CHANGED"
+
+                  # Check 1 — CHANGELOG update when code changes.
+                  if echo "$CHANGED" | grep -qE '^(apps|libs)/'; then
+                    if ! echo "$CHANGED" | grep -q '^CHANGELOG.md$'; then
+                      echo "ERROR: apps/ or libs/ changed but CHANGELOG.md was not updated." >&2
+                      exit 1
+                    fi
+                  fi
+
+                  # Check 2 — AI-attribution integrity. For every commit in
+                  # the PR that carries an AI Co-Authored-By trailer, the
+                  # PR must contain a net-new line in .ai-attribution.jsonl.
+                  # One entry can cover multiple work commits, so we don't
+                  # require a 1:1 match — just that *some* entry was added.
+                  AI_COMMITS=$(git log --format='%H %s' "$BASE_SHA"..HEAD --no-merges --extended-regexp --grep="$AI_TRAILER_REGEX" || true)
+                  if [ -n "$AI_COMMITS" ]; then
+                    echo "=== AI-assistant commits in this PR ==="
+                    echo "$AI_COMMITS"
+
+                    # Count added lines in .ai-attribution.jsonl (ignore
+                    # deletions and context; only net appends count).
+                    ADDED=$(git diff --numstat "$BASE_SHA"...HEAD -- .ai-attribution.jsonl | awk '{print $1}')
+                    ADDED=${ADDED:-0}
+                    echo "Net new .ai-attribution.jsonl lines: $ADDED"
+
+                    if [ "$ADDED" -eq 0 ]; then
+                      echo "ERROR: AI-assistant Co-Authored-By trailers detected on commits above, but .ai-attribution.jsonl has no new entries in this PR." >&2
+                      echo "Append one JSONL line per CLAUDE.md and push it as an attribution commit." >&2
+                      exit 1
+                    fi
+
+                    # Count alone is satisfiable by appending `{}` or a
+                    # truncated object — which silently weakens the audit log
+                    # CLAUDE.md promises. Pull the actual added lines and
+                    # require each to parse as JSON.
+                    ADDED_LINES=$(git diff --unified=0 "$BASE_SHA"...HEAD -- .ai-attribution.jsonl | awk '/^\+[^+]/ { sub(/^\+/, ""); print }')
+                    if [ -n "$ADDED_LINES" ] && ! printf '%s\n' "$ADDED_LINES" | jq -c . >/dev/null 2>&1; then
+                      echo "ERROR: one or more lines added to .ai-attribution.jsonl do not parse as JSON." >&2
+                      echo "Each line must be a single compact JSON object — see CLAUDE.md for the schema." >&2
+                      exit 1
+                    fi
+                  fi
+
+    # Blocks PRs that INTRODUCE a dep with a known high/critical advisory.
+    # Dependabot Alerts fire post-merge — this catches it at PR time, before
+    # the vulnerable version lands on develop/main. Summary is posted as a PR
+    # comment only on failure (`on-failure`), so clean PRs stay quiet.
+    # Free on public repos; runs against the PR's head vs base ref.
+    dependency-review:
+        name: dependency review
+        needs: detect
+        if: >-
+            needs.detect.outputs.code == 'true' &&
+            github.event_name == 'pull_request' &&
+            github.event.pull_request.draft == false
+        runs-on: ubuntu-latest
+        timeout-minutes: 3
+        steps:
+            - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+            - uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4
+              with:
+                  fail-on-severity: high
+                  comment-summary-in-pr: on-failure
+
+    # Validates renovate.json on PRs that change it. A typo in the schema
+    # or a malformed regex-manager silently disables that rule — Renovate
+    # prints a warning in its own dashboard but the PR merges green.
+    # Catching it at PR time means the change gets rejected before it
+    # can mask an upgrade.
+    renovate-config:
+        name: renovate config
+        needs: detect
+        if: >-
+            needs.detect.outputs.renovate == 'true' &&
+            github.event_name == 'pull_request' &&
+            github.event.pull_request.draft == false
+        runs-on: ubuntu-latest
+        timeout-minutes: 3
+        steps:
+            - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+            - uses: ./.github/actions/setup-node-deps
+            # renovate ships `renovate-config-validator` as a bin.
+            # Version is pinned so a compromised upstream release can't
+            # run arbitrary code inside this job on day zero. Bumped by
+            # Renovate itself via the customManager entry in renovate.json.
+            - run: npx --yes --package renovate@43.136.0 -- renovate-config-validator --strict
+
+    storybook-build:
+        name: storybook build
+        needs: [check, detect]
+        # PR-only: on push-to-main/develop the PR already ran this check before
+        # the squash-merge landed — a second run would just re-burn the minutes.
+        if: github.event_name == 'pull_request' && github.event.pull_request.draft == false && needs.detect.outputs.frontend == 'true'
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        steps:
+            - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+              with:
+                  fetch-depth: 0
+            - uses: ./.github/actions/setup-node-deps
+            - run: npx nx run frontend:build-storybook
+            - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+              with:
+                  name: storybook-static
+                  path: apps/frontend/storybook-static
+                  retention-days: 1
+                  if-no-files-found: error
+
+    # Storybook smoke test — every story is opened in Chromium via
+    # @storybook/test-runner and asserted to render without errors. CLAUDE.md
+    # mandates a `*.stories.tsx` per component but nothing else verifies the
+    # stories actually compile + render after a refactor; this is the gate.
+    #
+    # Runs against the static build produced by `storybook-build` (downloaded
+    # as an artifact) instead of rebuilding from scratch — saves ~1 min per PR.
+    # http-server + wait-on are pulled on-demand via `npx -y` so they're not
+    # part of `package.json`'s devDependencies (one-shot use, ~30s install
+    # cached by the runner).
+    storybook-test:
+        name: storybook test
+        needs: [storybook-build, detect]
+        if: github.event_name == 'pull_request' && github.event.pull_request.draft == false && needs.detect.outputs.frontend == 'true'
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        steps:
+            - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+            - uses: ./.github/actions/setup-node-deps
+            - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+              with:
+                  name: storybook-static
+                  path: apps/frontend/storybook-static
+            - name: Install Playwright browsers (Chromium)
+              # test-runner ships Playwright as a dependency; it just needs the
+              # Chromium binary fetched. Other browsers aren't worth the install
+              # cost — a story that renders in Chromium will render anywhere.
+              run: npx playwright install --with-deps chromium
+            - name: Run test-storybook
+              # Pattern from Storybook's official "Run in CI" recipe:
+              #   1. Serve the static build on :6006
+              #   2. Wait for the port (with timeout) before launching tests
+              #   3. test-storybook walks every *.stories.* and renders it
+              # `concurrently -k -s first` kills the http-server when the
+              # tests finish (success or failure) so the job doesn't hang.
+              run: |
+                  npx -y concurrently -k -s first -n "SB,TEST" \
+                    "npx -y http-server apps/frontend/storybook-static -p 6006 -s" \
+                    "npx -y wait-on tcp:127.0.0.1:6006 --timeout 60000 && npm run test:storybook"
+
+    # ---------- e2e ----------
+
+    # Builds / publishes the Playwright+mysql-client+lsof image to GHCR
+    # before e2e runs, and emits the exact tag e2e should consume. The
+    # GHA layer cache makes this a ~5s no-op when the Dockerfile hasn't
+    # changed; only real Playwright bumps actually rebuild. Pushing to
+    # GHCR on every run is cheap — Docker dedupes by digest, so unchanged
+    # layers don't upload.
+    #
+    # The bootstrap problem (image doesn't exist yet → e2e can't pull)
+    # is avoided by having e2e `needs:` this job, so the image is
+    # guaranteed to exist before e2e starts.
+    playwright-image:
+        name: playwright-e2e image (ghcr)
+        needs: [detect]
+        if: >-
+            needs.detect.outputs.code == 'true' &&
+            github.event_name == 'pull_request' &&
+            github.event.pull_request.draft == false
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        permissions:
+            contents: read
+            packages: write
+        outputs:
+            tag: ${{ steps.meta.outputs.tag }}
+        steps:
+            - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+            - name: Resolve image tag from Dockerfile
+              id: meta
+              run: |
+                  set -euo pipefail
+                  # Pull the Playwright base-image tag out of the FROM
+                  # line; we reuse it as the GHCR tag with a `-mysql`
+                  # suffix. This keeps the tag in lock-step with the
+                  # Dockerfile FROM (which Renovate auto-bumps).
+                  # The FROM is pinned by digest (`:tag@sha256:...`), so
+                  # capture only up to the `@` — a Docker tag may not
+                  # contain a digest, and `${BASE_TAG}-mysql` would
+                  # otherwise be an invalid reference.
+                  BASE_TAG=$(grep -E '^FROM mcr\.microsoft\.com/playwright:' .github/docker/playwright-e2e.Dockerfile \
+                      | sed -E 's|.*playwright:([^@[:space:]]+).*|\1|')
+                  if [ -z "$BASE_TAG" ]; then
+                      echo "Could not parse Playwright FROM tag from Dockerfile." >&2
+                      exit 1
+                  fi
+                  # Lowercase the owner — GHCR rejects mixed-case names.
+                  OWNER_LC="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+                  TAG="ghcr.io/${OWNER_LC}/playwright-e2e:${BASE_TAG}-mysql"
+                  echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+                  echo "Image tag: $TAG"
+            - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+            - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+              with:
+                  registry: ghcr.io
+                  username: ${{ github.actor }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
+            - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+              with:
+                  context: .github/docker
+                  file: .github/docker/playwright-e2e.Dockerfile
+                  tags: ${{ steps.meta.outputs.tag }}
+                  push: true
+                  cache-from: type=gha,scope=playwright-e2e
+                  cache-to: type=gha,mode=max,scope=playwright-e2e
+
+    e2e:
+        name: e2e
+        needs: [detect, check, playwright-image]
+        # PR-only: e2e already ran on the PR before the squash-merge landed,
+        # so skipping on push-to-main/develop avoids double-counting ~10 min of
+        # Playwright + MySQL runtime against the monthly free-tier budget.
+        # Also skipped on docs-only PRs (no code paths changed).
+        if: >-
+            needs.detect.outputs.code == 'true' &&
+            github.event_name == 'pull_request' &&
+            github.event.pull_request.draft == false
+        runs-on: ubuntu-latest
+        timeout-minutes: 30
+        permissions:
+            contents: read
+            packages: read
+        container:
+            # Pre-baked image from `playwright-image` job above — ships
+            # Playwright + mysql-client + lsof in one layer so we skip
+            # ~30s of `apt-get install` on every run.
+            image: ${{ needs.playwright-image.outputs.tag }}
+            credentials:
+                username: ${{ github.actor }}
+                password: ${{ secrets.GITHUB_TOKEN }}
+            # Firefox refuses to launch inside the GHA container without
+            # SYS_ADMIN — its sandbox needs user-namespace clone() which
+            # the default seccomp profile blocks. This is the workaround
+            # documented in Playwright's "Run in CI" guide.
+            options: --cap-add=SYS_ADMIN
+        services:
+            # Real MySQL for backend-e2e (asserts /api/health/ready → db: connected
+            # and reads seeded users from /api/users) and frontend-e2e (which
+            # exercises the same users-from-backend flow). Service containers
+            # share the job network when the job runs inside a container, so
+            # the backend reaches it at hostname `mysql`.
+            mysql:
+                image: mysql:8.4
+                env:
+                    MYSQL_DATABASE: app
+                    MYSQL_USER: app
+                    MYSQL_PASSWORD: app
+                    MYSQL_ROOT_PASSWORD: app
+                ports:
+                    - 3306:3306
+                options: >-
+                    --health-cmd="mysqladmin ping -h localhost -u root -papp"
+                    --health-interval=5s
+                    --health-timeout=5s
+                    --health-retries=20
+        env:
+            # Bind backend to 0.0.0.0 instead of the schema's default
+            # 'localhost'. On Node 20+ inside the Playwright image,
+            # 'localhost' resolves IPv6-first (::1) so app.listen binds
+            # only to ::1, but backend-e2e's waitForPortOpen checks
+            # 127.0.0.1 → ECONNREFUSED until it times out. Binding to
+            # 0.0.0.0 covers both stacks.
+            HOST: 0.0.0.0
+            # Firefox refuses to launch when $HOME isn't owned by the
+            # current user. Inside the Playwright container the runner
+            # mounts the workspace under a UID that doesn't own root's
+            # HOME — Playwright's documented workaround is to pin HOME
+            # to /root for the job.
+            HOME: /root
+            DB_HOST: mysql
+            DB_PORT: '3306'
+            DB_NAME: app
+            DB_USER: app
+            DB_PASSWORD: app
+            FRONTEND_URL: http://localhost:4200
+            # Vite inlines VITE_* at build time; without it the frontend
+            # Zod env validation in apps/frontend/src/lib/env.ts throws on
+            # first script eval and the page never paints (Playwright then
+            # fails the users-list test, lighthouse fails with NO_FCP).
+            VITE_API_URL: http://localhost:3000
+        steps:
+            - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+              with:
+                  fetch-depth: 0
+            # actions/checkout sets safe.directory on the runner host, but this
+            # job runs inside a container with its own git config — without this
+            # step every git CLI call (including `nx affected`'s git diff) fails
+            # with "dubious ownership".
+            - name: Mark workspace as safe (container)
+              run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+            - uses: ./.github/actions/setup-node-deps
+            # mysql-client (for loading db/schema.sql) and lsof (used by
+            # backend-e2e's globalTeardown to free port 3000) are baked
+            # into the GHCR image — see .github/docker/playwright-e2e.Dockerfile.
+            - name: Load schema and seed data
+              env:
+                  MYSQL_PWD: app
+              run: mysql -h mysql -u app app < db/schema.sql
+            - name: Resolve NX base
+              id: nx-base
+              uses: ./.github/actions/resolve-nx-base
+              with:
+                  pr-base: ${{ github.event.pull_request.base.sha }}
+                  push-before: ${{ github.event.before }}
+            - name: nx affected — e2e
+              run: npx nx affected -t e2e --parallel=1 --base="${{ steps.nx-base.outputs.base }}" --head=HEAD
+            - name: Self-Healing CI (on failure)
+              if: failure()
+              run: npx nx fix-ci
+            - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+              if: failure()
+              with:
+                  name: playwright-reports
+                  path: |
+                      apps/frontend-e2e/playwright-report
+                      apps/backend-e2e/playwright-report
+                  retention-days: 7
+
+    # Lighthouse moved to .github/workflows/ci-scheduled.yml (weekly cron).
+    # It was non-blocking (continue-on-error) and therefore wasn't gating
+    # anything on PRs — running it on every push was pure minute burn. The
+    # weekly run still surfaces perf regressions via a tracking issue.
+
+    # ---------- aggregate status ----------
+    #
+    # Single "everything required is green" check for branch protection. Point
+    # the protected branch's required status checks at `ci-pass` only, and you
+    # can rename or reshuffle the jobs above without touching branch protection
+    # settings. The job passes when every upstream job either succeeded or was
+    # intentionally skipped (e.g. storybook-build on a backend-only PR, e2e on
+    # push-to-main). It fails loudly if any upstream job failed or was
+    # cancelled — that's what `contains(... 'failure', 'cancelled')` catches.
+    ci-pass:
+        name: ci pass
+        if: always()
+        needs:
+            - detect
+            - check
+            - storybook-build
+            - storybook-test
+            - playwright-image
+            - e2e
+            - commitlint
+            - attribution-guard
+            - dependency-review
+            - renovate-config
+            - migrations-lint
+            - markdown-lint
+            - openapi-drift
+            - gitleaks-detect
+        runs-on: ubuntu-latest
+        timeout-minutes: 2
+        # No `environment:` here — a prior version gated ci-pass behind
+        # an `environment: main` approval to act as a pre-merge deploy
+        # gate. That rule was removed (see docs/RELEASE.md → "Things
+        # this flow deliberately avoids") because it created a chicken-
+        # and-egg with the post-merge pages.yml deploy. The deployment
+        # still happens on push-to-main via pages.yml; ci-pass only has
+        # to report green/red for branch protection.
+        steps:
+            - name: Verify no upstream job failed or was cancelled
+              env:
+                  RESULTS: ${{ toJSON(needs) }}
+              run: |
+                  echo "$RESULTS"
+                  if echo "$RESULTS" | grep -Eq '"result": "(failure|cancelled)"'; then
+                      echo "One or more required jobs failed or were cancelled." >&2
+                      exit 1
+                  fi
+                  echo "All required jobs succeeded or were skipped."
