@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Added** the first game: a two-player hot-seat **Tic-Tac-Toe** at the `/tic-tac-toe` route. Framework-free rules live in `apps/frontend/src/components/tic-tac-toe/logic.ts` (board/turn/win/draw helpers, immutable `applyMove`) with full unit coverage in `logic.spec.ts`; a pure presentational `Board.tsx` renders the grid, and the stateful `TicTacToe.tsx` derives all state from the board. Ships Storybook stories for both components (`Board.stories.tsx` covering empty/mid-game/win/draw/disabled, `TicTacToe.stories.tsx`) and an interaction spec (`TicTacToe.spec.tsx`). Styles added under `.ttt-*` in `apps/frontend/src/styles.css`; the home route (`apps/frontend/src/routes/index.tsx`) is now a games hub linking to it.
+- **Added** `IDEAS.md` at the repo root — a brainstorming doc for game ideas, the per-game rendering decisions (React/DOM vs. canvas), and a status-tracked game backlog.
+
+### Changed
+
+- **Changed** the frontend page `<title>` to `my-cool-webdev-game` (`apps/frontend/index.html`).
+
+### Fixed
+
+- **Fixed** a blank page when no `.env` is present: `apps/frontend/src/lib/env.ts` hard-threw on a missing `VITE_API_URL`, and because the router loads every route (the `users` route imports the API client → `env.ts`), that crashed the whole app — including games that never call the backend. `VITE_API_URL` now defaults to `http://localhost:3000` instead of being required, so a client-side game renders without any backend setup; set it in a `.env` to override when running the backend.
+
 ## [1.0.0] - 2026-06-03
 
 First stable release. The template's public surface — the API response envelope, the shared `@mcb/types` Zod schemas, the `develop → main → tag` release and `.ai-attribution.jsonl` attribution workflow, and the Node 24 baseline — is now considered stable under SemVer (see [`docs/SEMVER.md`](./docs/SEMVER.md)). This cut also closes a full OpenSSF Scorecard pass (token-permissions, pinned-dependencies, security-policy, vulnerabilities, signed-releases, branch-protection) and adds backend production-hardening (fatal-error handlers, HTTP keep-alive timeouts, a non-root container image).
